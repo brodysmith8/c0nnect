@@ -2,8 +2,6 @@ import express from 'express';
 import bodyParser from 'body-parser';
 import cors from 'cors';
 import { Request, Response, Router } from 'express';
-import { findAPortNotInUse } from 'portscanner';
-import { Server } from 'net';
 import { ChatServerFactory } from './ChatServerFactory';
 
 const port = 3000;
