@@ -15,6 +15,12 @@ router.get('/healthcheck', (req: Request, res: Response) => {
     res.send('LTD DITS Connected');
 });
 
+router.post('/chatserver', async (req: Request, res: Response) => {
+    setTimeout(() => {
+        res.send({ port: 42069 });
+    }, 600);
+});
+
 app.use('/api/v1', router);
 app.listen(port, () => {
     console.log(`DITS server running on http://localhost:${port}`);
