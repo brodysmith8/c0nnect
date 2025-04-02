@@ -12,10 +12,16 @@
     async function createServer(event) {
         isLoading = true;
         console.log(`POST url/api/v1/chatserver`);
-        let res = await fetch("http://localhost:3001/api/v1/chatserver", {
+
+        let res = await fetch("http://localhost:3000/api/v1/chatserver", {
             method: "POST"
         });
         let body = await res.json();
+        
+        const exampleSocket = new WebSocket(`ws://localhost:3000/chatserver/${body.serverId}`); // Send upgrade request 
+        exampleSocket.onopen = () => {
+            console.log("Connection opened!");
+        }
         isLoading = false;
     }
 

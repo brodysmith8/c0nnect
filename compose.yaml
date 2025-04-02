@@ -19,6 +19,6 @@ services:
         build: ./nginx/.
         ports: 
             - 80:80 # For client frontend 
-            - 3001:3001 # For control service API 
+            - 3000:3000 # For control service API 
         depends_on:
             - server

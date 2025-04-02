@@ -2,6 +2,9 @@ import express from 'express';
 import bodyParser from 'body-parser';
 import cors from 'cors';
 import { Request, Response, Router } from 'express';
+import { findAPortNotInUse } from 'portscanner';
+import { Server } from 'net';
+import { ChatServerFactory } from './ChatServerFactory';
 
 const port = 3000;
 const app = express(); 
@@ -11,17 +14,23 @@ app.use(bodyParser.json());
 const router = Router();
 router.use((req: Request, res: Response, next) => { next() });
 
+// Pingable healthcheck endpoint
 router.get('/healthcheck', (req: Request, res: Response) => {
-    res.send('LTD DITS Connected');
+    res.send('c0nnect API server connected');
 });
 
+// Create a new server
+const chatServerFactory = new ChatServerFactory();
 router.post('/chatserver', async (req: Request, res: Response) => {
-    setTimeout(() => {
-        res.send({ port: 42069 });
-    }, 600);
+    let serverIdObj = chatServerFactory.createChatServer();
+    if (serverIdObj.serverId === -1) res.status(500).send({ message:"Failed to create ChatServer. Please try again later." });
+    else res.send(serverIdObj);
 });
 
 app.use('/api/v1', router);
-app.listen(port, () => {
-    console.log(`DITS server running on http://localhost:${port}`);
+let httpServer = app.listen(port, () => {
+    console.log(`c0nnect API server running on http://localhost:${port}`);
 });
+
+// Give the chatServerFactory the server so it can make WebSocketServers with it
+chatServerFactory.httpServer = httpServer;

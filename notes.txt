@@ -10,6 +10,7 @@
 
 - failure handling might only include fail-stop failures (week4 failure detection)
 - use heartbeats to communicate between client and server, and between primary and backup 
+	- could use nginx for this https://docs.nginx.com/nginx/admin-guide/load-balancer/tcp-health-check/ 
 	- need to wait 3*heartbeat period time units (T time units) before failure to distinguish between message loss and process crash 
 	- how did we determine T? 
 	- chosen partly because network traffic is less than if pings were used
