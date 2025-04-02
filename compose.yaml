@@ -1,0 +1,24 @@
+name: c0nnect
+
+services:
+    client:
+        build: ./client/.
+    server:
+        build: ./server/.
+        env_file: .env
+        depends_on: 
+            - mongodb
+    mongodb:
+        image: mongodb/mongodb-community-server:7.0.9-ubi9
+        ports:
+            - 27017:27017
+        env_file: .env
+        volumes:
+            - ./mongodb/mongodb_volume:/data/db
+    nginx:
+        build: ./nginx/.
+        ports: 
+            - 80:80 # For client frontend 
+            - 3001:3001 # For control service API 
+        depends_on:
+            - server

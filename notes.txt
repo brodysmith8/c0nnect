@@ -1,0 +1,17 @@
+- messages could be causally related to each other, so sequence matters, so vector clocks must be used 
+
+- primary-backup replication model 
+	- two docker compose projects are implemented on two separate machines 
+	- before one project does something, it checks if the other can do it too
+		- if yes, the primary does the action as well, sends “success” response to client
+		- if no, primary does not do the action, sends “failure” response to client
+	- primary is arbitrary in this model 
+	- could look into sharding (week4, primary-backup slide 25)? 
+
+- failure handling might only include fail-stop failures (week4 failure detection)
+- use heartbeats to communicate between client and server, and between primary and backup 
+	- need to wait 3*heartbeat period time units (T time units) before failure to distinguish between message loss and process crash 
+	- how did we determine T? 
+	- chosen partly because network traffic is less than if pings were used
+	- heartbeats have completeness (every failure is eventually detected), but not accuracy (not every detected failure corresponds to a crashed node/process) (slide 17)
+
