@@ -1,8 +1,18 @@
-// Create WebSocketServers (ChatServers)
+/*
+Create and manage WebSocketServers (ChatServers).
+
+
+[1] WebSocket package object documentation: https://github.com/websockets/ws/blob/HEAD/doc/ws.md 
+[2] WebSocket package tutorial: https://www.npmjs.com/package/ws#multiple-servers-sharing-a-single-https-server  
+*/
 import { Server } from "net";
 import { WebSocket, WebSocketServer } from "ws";
 import { MongoClient } from "mongodb";
 import { IncomingMessage } from "http";
+
+const ACTIVE_USER_COLLECTION_NAME = "active_users";
+const METAINFO_COLLECTION_NAME = "metainfo";
+const MESSAGES_COLLECTION_NAME = "messages";
 
 type ChatServer = WebSocketServer;
 
@@ -19,8 +29,7 @@ class ChatServerController {
     set httpServer(server: Server) {
         this._httpServer = server;
 
-        // Select the correct ChatServer based on what serverId is supplied in the URL 
-        // https://www.npmjs.com/package/ws#multiple-servers-sharing-a-single-https-server 
+        // Select the correct ChatServer based on what serverId is supplied in the URL [2]
         this._httpServer.on('upgrade', async (request, socket, head) => {
             // Extract serverID and username out of the provided URL 
             const { pathname } = new URL(request.url, 'ws://localhost:3000/chatserver');
@@ -43,10 +52,40 @@ class ChatServerController {
         });
     }
 
-    // Dependency injection to add the MongoClient
-    set mongoClient(mongoClient: MongoClient) {
+    // Dependency injection to add the MongoClient. Also, check for existing ChatServers and restore their state 
+    async setMongoClient(mongoClient: MongoClient, restoreServers: boolean = true) {
         this._mongoClient = mongoClient;
-        this._mongoClient.connect();
+        await this._mongoClient.connect();
+
+        // Check for existing ChatServer databases, while ignoring the default DBs 
+        let dbNames = (await this._mongoClient.db().admin().listDatabases()).databases
+            .filter((db) => (db.name !== "admin" && db.name !== "config" && db.name !== "local"))
+            .map((dbObj) => dbObj.name);
+        
+        // Clear all DBs
+        if (!this._httpServer || !restoreServers) { 
+            dbNames.map(async (dbName) => {
+                // Have to do this cast to unknown -> MongoClient because TypeScript can't recognize thisArg from .map()
+                await this._mongoClient?.db(dbName).dropDatabase(); 
+            }, this);
+            return; 
+        }
+
+        // Otherwise, restore the ChatServers
+        let maxServerId = 0;
+        dbNames.map(async (dbName) => {
+            let serverId = Number.parseInt(dbName);
+            if (Number.isNaN(serverId)) {
+                console.error("ServerID is NaN.");
+                console.log("ServerID: ", dbName);
+                return;
+            }
+            let ownerUsername = (await this._mongoClient?.db(dbName).collection(METAINFO_COLLECTION_NAME).findOne({ owner: true }))?.username;
+            this._i = serverId - 1;
+            if (serverId > maxServerId) maxServerId = serverId;
+            await this.createChatServer(ownerUsername);
+        }, this);
+        this._i = maxServerId; // Restore the old server ID for sequential ordering
     }
  
     async createChatServer(ownerUsername: string): Promise<{ serverId: number }> {
@@ -58,8 +97,8 @@ class ChatServerController {
 
         // Create relevant DB and entries
         let db = this._mongoClient?.db(`${serverId}`);
-        let metainfoCollection = db?.collection("metainfo");
-        await metainfoCollection?.insertOne({ username: ownerUsername, owner: true });
+        let metainfoCollection = db?.collection(METAINFO_COLLECTION_NAME);
+        await metainfoCollection?.replaceOne({ username: ownerUsername, owner: true }, { username: ownerUsername, owner: true }, { upsert: true }); // Replace if exists, add if not
 
         // Create the WebSocketServer for persistent communication 
         const newChatServer = new WebSocketServer({ noServer: true });
@@ -71,7 +110,7 @@ class ChatServerController {
             const username = pathnameSplitReversed[0];
         
             // Is this person an existing user, or is this username taken? 
-            let activeUsersCollection = db?.collection("active_users");
+            let activeUsersCollection = db?.collection(ACTIVE_USER_COLLECTION_NAME);
             let existingUser = await activeUsersCollection?.findOne({ username: username });
             let usernameIsTaken = typeof existingUser !== "undefined" && existingUser !== null;
             if (usernameIsTaken) {
@@ -84,10 +123,29 @@ class ChatServerController {
             await activeUsersCollection?.insertOne({ username: username });
             this._websocketToClientUsername.set(webSocket, username);
 
-            // Tell the others that this person joined
-            let dataStr = JSON.stringify({ status: "joined!", username: username });
+            // Get the message history for this server, sorted in chronological order
+            let chatHistory = await (db?.collection(MESSAGES_COLLECTION_NAME).find({}).sort({ utc_timestamp: 1 }))?.toArray();
+
+            // Get the active users if this server has any
+            let activeUsers = await (db?.collection(ACTIVE_USER_COLLECTION_NAME).find({}))?.toArray();
+
+            // Tell the others that this person joined, and send this person the chat history + current active user list 
+            let dataObjJoiningClient: any = { status: "joined!", username: username };
+            let dataObjEveryoneElse: any = { status: "joined!", username: username };
+            if (chatHistory) {
+                dataObjJoiningClient.chatHistory = chatHistory;
+            } 
+            if (activeUsers) {
+                dataObjJoiningClient.activeUsers = activeUsers;
+            }
+
+            let dataObjJoiningClientStringified = JSON.stringify(dataObjJoiningClient);
+            let dataObjEveryoneElseStringified = JSON.stringify(dataObjEveryoneElse);
             newChatServer.clients.forEach((client) => {
-                if (client.readyState === WebSocket.OPEN) client.send(dataStr); // Relay this message to all the clients
+                if (client.readyState !== WebSocket.OPEN) return;
+                
+                if (client === webSocket) client.send(dataObjJoiningClientStringified) 
+                else client.send(dataObjEveryoneElseStringified); // Relay this message to all the clients
             });
             
             webSocket.on('error', console.error);
@@ -116,7 +174,7 @@ class ChatServerController {
                     }
 
                     // TODO: write to DB here
-                    await db?.collection("messages").insertOne({ username: actualUsername, message: receivedData.message, utc_timestamp: Date.now() });
+                    await db?.collection(MESSAGES_COLLECTION_NAME).insertOne({ username: actualUsername, message: receivedData.message, utc_timestamp: Date.now() });
                     
                     let dataStr = JSON.stringify(receivedData);
                     newChatServer.clients.forEach((client) => {

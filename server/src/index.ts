@@ -18,11 +18,6 @@ const mongoInterface = new MongoInterface(`mongodb://${process.env.MONGO_INITDB_
 await mongoInterface.dbIsHealthy("Ingress API initialization");
 const mongoClient = mongoInterface.client; // Represents a client pool
 
-// Object to create, manage, and destroy ChatServers
-const chatServerController = new ChatServerController();
-await mongoInterface.dbIsHealthy("ChatServerController initialization");
-chatServerController.mongoClient = mongoClient;
-
 // Pingable healthcheck endpoint
 router.get('/healthcheck', async (req: Request, res: Response) => {
     let dbIsHealthy = await mongoInterface.dbIsHealthy("/api/v1/healthcheck");
@@ -58,5 +53,8 @@ let httpServer = app.listen(port, () => {
     console.log(`c0nnect API server running on http://localhost:${port}`);
 });
 
-// Give the chatServerFactory the server so it can make WebSocketServers with it
+// Object to create, manage, and destroy ChatServers. Base HTTP server is Express's
+const chatServerController = new ChatServerController();
 chatServerController.httpServer = httpServer;
+await mongoInterface.dbIsHealthy("ChatServerController initialization"); // Check if DB is healthy first
+await chatServerController.setMongoClient(mongoClient, true); // Needs to come after chatServerController.httpServer = ... 

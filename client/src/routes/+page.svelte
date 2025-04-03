@@ -1,10 +1,12 @@
 <script lang="ts">
     import LoadingDots from "$lib/components/LoadingDots.svelte";
+    import Button from "$lib/components/Button.svelte";
     
     let username = $state("");
     let serverId = $state("");
     let isLoading = $state(false);
     let isConnected = $state(false);
+    let activeUsers = $state([]);
     let messageBuffer = $state("");
     let messages = $state([{ 
         username: "username1", 
@@ -100,7 +102,11 @@
             dataSocket.onmessage = (event) => {
                 console.log(`received data: `, JSON.parse(event.data));
                 let receivedMessage = JSON.parse(event.data);
-                messages.push(receivedMessage);
+                if (receivedMessage.activeUsers) activeUsers = receivedMessage.activeUsers; // Overwrite active users with current active users 
+                if (receivedMessage.chatHistory) {
+                    messages = receivedMessage.chatHistory; // Overwrite all messages with the historical chat
+                    messages.push({ username: receivedMessage.username, status: receivedMessage.status }); // Include the message telling us we joined
+                } else messages.push(receivedMessage); // Then we just got a single message
                 latestMessage = receivedMessage;
             }
         } catch (err) {
@@ -154,25 +160,23 @@
             </div>
             <div class="flex">
                 <input id="serverId-input" type="text" placeholder="server ID" class="border-2 w-full border-r-0 pl-2 font-mono disabled:bg-gray-400" disabled={isLoading || isConnected} bind:value={serverId} />
-                <button class="border-2 px-2 bg-green-600 uppercase font-mono text-sm w-18 font-bold hover:cursor-pointer hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-default"
-                    disabled={isLoading || isConnected}
-                    onclick={joinServer}>Join</button>
+                <Button disabled={isLoading || isConnected}
+                    onclick={joinServer}
+                    class={ "bg-green-600 hover:bg-green-700" }
+                    width="w-18"
+                    bind:value={serverId}>
+                    join
+                </Button>
             </div>
-            {#if isConnected}
             <div class="flex">
-                <button class="border-2 px-2 bg-red-700 uppercase font-mono text-sm w-full font-bold hover:cursor-pointer hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-default" 
-                    disabled={isLoading} 
-                    onclick={disconnectServer}>disconnect from chat server{` ${serverId}`}</button>
-                <LoadingDots isLoading={isLoading} />
+                <Button disabled={isLoading} 
+                    class={ { "bg-green-600 hover:bg-green-700": !isConnected, "bg-red-700 hover:bg-red-800": isConnected } }
+                    onclick={isConnected ? disconnectServer : createServer }
+                    width={"w-full"}
+                >
+                    { isConnected ? `disconnect from chat server${` ${serverId}`}` : "create server" }
+                </Button>
             </div>
-            {:else}
-            <div class="flex">
-                <button class="border-2 px-2 bg-green-600 uppercase font-mono text-sm w-full font-bold hover:cursor-pointer hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-default" 
-                disabled={(serverId === "" ? false:true) || isLoading} 
-                onclick={createServer}>create server</button>
-                <LoadingDots isLoading={isLoading} />
-            </div>
-            {/if}
         </div>
         <div class="h-[512px] max-h-[512px] overflow-y-auto border-2 px-3" bind:this={messagesContainer}>
             <div class="flex w-full flex-col gap-3 py-1">
@@ -194,7 +198,7 @@
             </div>
         </div>
         <div class="flex">
-            <input id="serverId-input" type="text" placeholder="share your message" class="border-2 w-full border-r-0 pl-2 font-mono border-t-0 disabled:bg-gray-400" disabled={!isConnected} bind:value={messageBuffer} />
+            <input id="serverId-input" type="text" placeholder="share your message" class="border-2 w-full border-r-0 pl-2 pr-2 font-mono border-t-0 disabled:bg-gray-400" disabled={!isConnected} bind:value={messageBuffer} />
             <button class="border-2 px-2 bg-green-600 uppercase font-mono text-sm w-18 font-bold hover:cursor-pointer hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-default border-t-0"
                 disabled={!isConnected}
                 onclick={sendMessage}>Send</button>
