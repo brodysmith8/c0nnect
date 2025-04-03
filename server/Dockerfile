@@ -1,5 +1,5 @@
 # https://docs.docker.com/guides/nodejs/containerize/
-FROM node:22.11.0
+FROM node:22.14.0
 
 WORKDIR /usr/src/app
 
