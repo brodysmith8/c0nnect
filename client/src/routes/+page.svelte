@@ -17,6 +17,16 @@
         message: "This is a third sample message"  
     }]);
     let dataSocket: WebSocket;
+    let messagesContainer;
+    let latestMessage = $state({ username: "", message: "" });
+
+    // Scroll to the bottom of the chat window when a new message comes in
+    $effect(() => {
+        let m = latestMessage;
+        if (messagesContainer) {
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+    });
 
     async function createServer(event) {
         if (username.length === 0) {
@@ -86,6 +96,7 @@
                 console.log(`received data: `, JSON.parse(event.data));
                 let receivedMessage = JSON.parse(event.data);
                 messages.push(receivedMessage);
+                latestMessage = receivedMessage;
             }
         } catch (err) {
             console.error(err);
@@ -158,7 +169,7 @@
             </div>
             {/if}
         </div>
-        <div class="h-[512px] max-h-[512px] overflow-y-auto border-2 px-3">
+        <div class="h-[512px] max-h-[512px] overflow-y-auto border-2 px-3" bind:this={messagesContainer}>
             <div class="flex w-full flex-col gap-3 py-1">
                 {#each messages as message} 
                     <div class="w-full">
