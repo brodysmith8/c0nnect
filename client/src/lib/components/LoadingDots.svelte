@@ -17,14 +17,14 @@
     0% {
       opacity: 0;
     }
-    100% {
+    60% {
       opacity: 1;
     }
   }
 </style>
 
 {#if isLoading}
-  <div class="flex">
+  <div class="flex font-mono text-lg">
     <span class="dot">.</span>
     <span class="dot">.</span>
     <span class="dot">.</span>
