@@ -41,7 +41,12 @@
 
         try {
             let res = await fetch("http://localhost:3000/api/v1/chatserver", {
-                method: "POST"
+                method: "POST",
+                headers: {
+                    'Accept': "application/json",
+                    'Content-Type': "application/json"
+                },
+                body: JSON.stringify({ username: username })
             });
             let body = await res.json();
             serverId = body.serverId;
@@ -83,7 +88,7 @@
                 return;
             }
 
-            dataSocket = new WebSocket(`ws://localhost:3000/chatserver/${serverId}`); // Send upgrade request 
+            dataSocket = new WebSocket(`ws://localhost:3000/chatserver/${serverId}/${username}`); // Send upgrade request 
             dataSocket.onopen = () => {
                 isConnected = true;
                 console.log("c0nnect data connection opened!");

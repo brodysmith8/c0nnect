@@ -2,7 +2,8 @@ import express from 'express';
 import bodyParser from 'body-parser';
 import cors from 'cors';
 import { Request, Response, Router } from 'express';
-import { ChatServerController } from './ChatServerController';
+import { ChatServerController } from "./ChatServerController.js";
+import { MongoInterface } from './MongoInterface.js';
 
 const port = 3000;
 const app = express(); 
@@ -12,18 +13,30 @@ app.use(bodyParser.json());
 const router = Router();
 router.use((req: Request, res: Response, next) => { next() });
 
+// Initialize MongoDB client pool and check connection 
+const mongoInterface = new MongoInterface(`mongodb://${process.env.MONGO_INITDB_ROOT_USERNAME}:${process.env.MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017`);
+await mongoInterface.dbIsHealthy("Ingress API initialization");
+const mongoClient = mongoInterface.client; // Represents a client pool
+
 // Object to create, manage, and destroy ChatServers
 const chatServerController = new ChatServerController();
+await mongoInterface.dbIsHealthy("ChatServerController initialization");
+chatServerController.mongoClient = mongoClient;
 
 // Pingable healthcheck endpoint
-router.get('/healthcheck', (req: Request, res: Response) => {
-    res.send('c0nnect API server connected');
+router.get('/healthcheck', async (req: Request, res: Response) => {
+    let dbIsHealthy = await mongoInterface.dbIsHealthy("/api/v1/healthcheck");
+    res.send(`c0nnect API server connected. Database is ${dbIsHealthy ? "healthy." : "not healthy!"}`);
 });
 
 // Create a new server
 router.post('/chatserver', async (req: Request, res: Response) => {
-    let serverIdObj = chatServerController.createChatServer();
+    if (typeof req.body.username === "undefined" || req.body.username === "") res.status(400).send({ message: "Please supply a username." });
+
+    let serverIdObj = await chatServerController.createChatServer(req.body.username);
     if (serverIdObj.serverId === -1) res.status(500).send({ message: "Failed to create ChatServer. Please try again later." });
+
+    // Store some meta about this creation
     else res.send(serverIdObj);
 });
 
