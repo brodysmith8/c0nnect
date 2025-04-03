@@ -85,7 +85,7 @@ class ChatServerController {
             this._websocketToClientUsername.set(webSocket, username);
 
             // Tell the others that this person joined
-            let dataStr = JSON.stringify({ status: "joined", username: username });
+            let dataStr = JSON.stringify({ status: "joined!", username: username });
             newChatServer.clients.forEach((client) => {
                 if (client.readyState === WebSocket.OPEN) client.send(dataStr); // Relay this message to all the clients
             });
@@ -95,7 +95,7 @@ class ChatServerController {
             webSocket.on('close', async () => {
                 console.log(`Client closed connection.`);
                 let clientUsername = this._websocketToClientUsername.get(webSocket) ?? "someone";
-                let dataStr = JSON.stringify({ status: "left", username: clientUsername });
+                let dataStr = JSON.stringify({ status: "left.", username: clientUsername });
                 await activeUsersCollection?.deleteOne({ username: clientUsername}); // Remove this client from the DB 
                 this._websocketToClientUsername.delete(webSocket); // Remove this client from the websocket:username map
                 newChatServer.clients.forEach((client) => {
@@ -105,11 +105,18 @@ class ChatServerController {
             
             webSocket.on('message', async (data: any) => {
                 try {
+                    let actualUsername = this._websocketToClientUsername.get(webSocket);
                     const receivedData = JSON.parse(data);
-                    console.log("Data: ", receivedData);
-                    console.log("Request: ", request);
+
+                    if (actualUsername !== receivedData.username) {
+                        // Impersonation is happening 
+                        webSocket.send("Impersonation is against the rules. Closing connection.");
+                        webSocket.close();
+                        return;
+                    }
 
                     // TODO: write to DB here
+                    await db?.collection("messages").insertOne({ username: actualUsername, message: receivedData.message, utc_timestamp: Date.now() });
                     
                     let dataStr = JSON.stringify(receivedData);
                     newChatServer.clients.forEach((client) => {
