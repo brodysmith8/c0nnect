@@ -1,26 +1,19 @@
 <script lang="ts">
     import LoadingDots from "$lib/components/LoadingDots.svelte";
     import Button from "$lib/components/Button.svelte";
-    
+
     let username = $state("");
     let serverId = $state("");
     let isLoading = $state(false);
     let isConnected = $state(false);
+    let isOwner = $state(false);
     let activeUsers = $state([]);
     let messageBuffer = $state("");
-    let messages = $state([{ 
-        username: "username1", 
-        message: "This is a sample message"  
-    }, {
-        username: "username2", 
-        message: "This is a second sample message that's quite a bit longer This is a second sample message that's quite a bit longer This is a second sample message that's quite a bit longer This is a second sample message that's quite a bit longer This is a second sample message that's quite a bit longer"  
-    }, {
-        username: "username3", 
-        message: "This is a third sample message"  
-    }]);
+    let messages = $state([ { username: "No messages. Start or join a chat server!", message: "" } ]);
     let dataSocket: WebSocket;
     let messagesContainer;
     let latestMessage = $state({ username: "", message: "" });
+    let areDeleting = $state(false);
 
     // Scroll to the bottom of the chat window when a new message comes in
     $effect(() => {
@@ -97,12 +90,18 @@
             }
             dataSocket.onclose = () => {
                 isConnected = false;
+                if (!areDeleting) messages.push({ username: username, status: "left." });
+                else {
+                    areDeleting = false;
+                }
                 console.log("c0nnect data connection closed!"); 
             }
             dataSocket.onmessage = (event) => {
                 console.log(`received data: `, JSON.parse(event.data));
                 let receivedMessage = JSON.parse(event.data);
                 if (receivedMessage.activeUsers) activeUsers = receivedMessage.activeUsers; // Overwrite active users with current active users 
+                if (receivedMessage.ownerUsername) isOwner = receivedMessage.ownerUsername === username; // Find out if we are the owner (not advisable to do this on the client-side)
+                if (receivedMessage.deleting) areDeleting = true; // We will shortly receive a close on this socket 
                 if (receivedMessage.chatHistory) {
                     messages = receivedMessage.chatHistory; // Overwrite all messages with the historical chat
                     messages.push({ username: receivedMessage.username, status: receivedMessage.status }); // Include the message telling us we joined
@@ -141,6 +140,20 @@
             dataSocket.close();
         }
     }
+
+    async function deleteServer(event) {
+        let choice = confirm("Are you sure you want to delete the server?");
+        if (!choice) return;
+
+        areDeleting = true;
+        try {
+            dataSocket.send(JSON.stringify({ username: username, deleteServer: true }));
+        } catch (err) {
+            areDeleting = false;
+            console.error(err);
+            alert("Unknown error deleting ChatServer. Check the console.");
+        }
+    }
 </script>
 
 <div class="w-full max-w-full pl-2">
@@ -160,12 +173,12 @@
             </div>
             <div class="flex">
                 <input id="serverId-input" type="text" placeholder="server ID" class="border-2 w-full border-r-0 pl-2 font-mono disabled:bg-gray-400" disabled={isLoading || isConnected} bind:value={serverId} />
-                <Button disabled={isLoading || isConnected}
-                    onclick={joinServer}
+                <Button disabled={isLoading || (isConnected && !isOwner)}
+                    onclick={(isOwner && isConnected) ? deleteServer : joinServer}
                     class={ "bg-green-600 hover:bg-green-700" }
-                    width="w-18"
+                    width="w-18 max-w-22"
                     bind:value={serverId}>
-                    join
+                    {(isOwner && isConnected) ? 'delete server' : 'join'}
                 </Button>
             </div>
             <div class="flex">

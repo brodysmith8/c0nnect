@@ -73,7 +73,7 @@ class ChatServerController {
 
         // Otherwise, restore the ChatServers
         let maxServerId = 0;
-        dbNames.map(async (dbName) => {
+        for (let dbName of dbNames) {
             let serverId = Number.parseInt(dbName);
             if (Number.isNaN(serverId)) {
                 console.error("ServerID is NaN.");
@@ -82,9 +82,11 @@ class ChatServerController {
             }
             let ownerUsername = (await this._mongoClient?.db(dbName).collection(METAINFO_COLLECTION_NAME).findOne({ owner: true }))?.username;
             this._i = serverId - 1;
-            if (serverId > maxServerId) maxServerId = serverId;
             await this.createChatServer(ownerUsername);
-        }, this);
+            if (serverId > maxServerId) { 
+                maxServerId = serverId; 
+            }
+        }
         this._i = maxServerId; // Restore the old server ID for sequential ordering
     }
  
@@ -98,7 +100,7 @@ class ChatServerController {
         // Create relevant DB and entries
         let db = this._mongoClient?.db(`${serverId}`);
         let metainfoCollection = db?.collection(METAINFO_COLLECTION_NAME);
-        await metainfoCollection?.replaceOne({ username: ownerUsername, owner: true }, { username: ownerUsername, owner: true }, { upsert: true }); // Replace if exists, add if not
+        await metainfoCollection?.replaceOne({ owner: true }, { username: ownerUsername, owner: true }, { upsert: true }); // Replace if exists, add if not
 
         // Create the WebSocketServer for persistent communication 
         const newChatServer = new WebSocketServer({ noServer: true });
@@ -107,7 +109,7 @@ class ChatServerController {
             // Extract serverID and username out of the provided URL 
             const { pathname } = new URL(request.url ?? "", 'ws://localhost:3000/chatserver');
             const pathnameSplitReversed = pathname.split("/").reverse();
-            const username = pathnameSplitReversed[0];
+            const username = decodeURIComponent(pathnameSplitReversed[0]); // Decode this to replace "%20" and stuff with a space/actual symbol 
         
             // Is this person an existing user, or is this username taken? 
             let activeUsersCollection = db?.collection(ACTIVE_USER_COLLECTION_NAME);
@@ -130,7 +132,7 @@ class ChatServerController {
             let activeUsers = await (db?.collection(ACTIVE_USER_COLLECTION_NAME).find({}))?.toArray();
 
             // Tell the others that this person joined, and send this person the chat history + current active user list 
-            let dataObjJoiningClient: any = { status: "joined!", username: username };
+            let dataObjJoiningClient: any = { status: "joined!", username: username, ownerUsername: ownerUsername };
             let dataObjEveryoneElse: any = { status: "joined!", username: username };
             if (chatHistory) {
                 dataObjJoiningClient.chatHistory = chatHistory;
@@ -173,7 +175,14 @@ class ChatServerController {
                         return;
                     }
 
-                    // TODO: write to DB here
+                    // If the delete flag is present and if this user is the owner, then delete the server.
+                    // Without user authentication, this is the most "secure" way to do it. Not good but marginally better than a DELETE API call
+                    if (receivedData.deleteServer && actualUsername === ownerUsername) {
+                        this.deleteChatServer(serverId);
+                        return;
+                    }
+
+                    // Write to DB 
                     await db?.collection(MESSAGES_COLLECTION_NAME).insertOne({ username: actualUsername, message: receivedData.message, utc_timestamp: Date.now() });
                     
                     let dataStr = JSON.stringify(receivedData);
@@ -189,6 +198,32 @@ class ChatServerController {
         });
         
         return { serverId: serverId }
+    }
+
+    async getChatServerOwnerUsername(serverId: number): Promise<string> {
+        return (await this._mongoClient?.db(`${serverId}`).collection(METAINFO_COLLECTION_NAME).findOne({ owner: true }))?.username ?? "";
+    }
+
+    async deleteChatServer(serverId: number): Promise<boolean> {
+        try {
+            let res = await this._mongoClient?.db(`${serverId}`).dropDatabase();
+            if (!res) return false;
+        } catch (err) {
+            console.log("Error deleting database.");
+            console.error(err);
+        }
+        
+        let chatServer = this._serverIdToChatServerMap.get(serverId);
+        let goodbyeObject = JSON.stringify({ username: "Server has been deleted.", status: "", deleting: true });
+        chatServer?.clients.forEach((client) => {
+            if (client.readyState !== WebSocket.OPEN) return;
+            client.send(goodbyeObject); // Relay this message to all the clients
+            client.close(); // End this connection
+            this._websocketToClientUsername.delete(client);
+        });
+        this._serverIdToChatServerMap.delete(serverId);
+
+        return true;
     }
 
     doesChatServerExist(serverId: number): boolean {
