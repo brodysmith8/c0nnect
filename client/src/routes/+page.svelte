@@ -93,6 +93,7 @@
                 if (!areDeleting) messages.push({ username: username, status: "left." });
                 else {
                     areDeleting = false;
+                    activeUsers = [];
                 }
                 console.log("c0nnect data connection closed!"); 
             }
@@ -102,6 +103,18 @@
                 if (receivedMessage.activeUsers) activeUsers = receivedMessage.activeUsers; // Overwrite active users with current active users 
                 if (receivedMessage.ownerUsername) isOwner = receivedMessage.ownerUsername === username; // Find out if we are the owner (not advisable to do this on the client-side)
                 if (receivedMessage.deleting) areDeleting = true; // We will shortly receive a close on this socket 
+                if (receivedMessage.status && receivedMessage.username !== username) {
+                    if (receivedMessage.status === "left.") {
+                        // Remove user from active users list
+                        let newAU = [];
+                        for (let user of activeUsers) {
+                            if (user.username !== receivedMessage.username) newAU.push(user)
+                        }
+                        activeUsers = newAU;
+                    } else if (receivedMessage.status === "joined!") {
+                        activeUsers.push({ username: receivedMessage.username });
+                    }
+                }
                 if (receivedMessage.chatHistory) {
                     messages = receivedMessage.chatHistory; // Overwrite all messages with the historical chat
                     messages.push({ username: receivedMessage.username, status: receivedMessage.status }); // Include the message telling us we joined
@@ -165,7 +178,7 @@
         </div>
     </div>
     
-    <div class="max-w-[512px] w-[512px]">
+    <div class="max-w-[512px] w-[512px] mb-4">
         <div class="flex flex-col gap-1 mb-4">
             <div class="flex max-w-full">
                 <input id="username-input" type="text" placeholder="username" class="border-2 w-full pl-2 font-mono disabled:bg-gray-400" disabled={isLoading || isConnected} bind:value={username} />
@@ -175,7 +188,7 @@
                 <input id="serverId-input" type="text" placeholder="server ID" class="border-2 w-full border-r-0 pl-2 font-mono disabled:bg-gray-400" disabled={isLoading || isConnected} bind:value={serverId} />
                 <Button disabled={isLoading || (isConnected && !isOwner)}
                     onclick={(isOwner && isConnected) ? deleteServer : joinServer}
-                    class={ "bg-green-600 hover:bg-green-700" }
+                    class={ { "bg-green-600 hover:bg-green-700": !(isOwner && isConnected), "bg-yellow-600 hover:bg-yellow-700": (isOwner && isConnected) } }
                     width="w-18 max-w-22"
                     bind:value={serverId}>
                     {(isOwner && isConnected) ? 'delete server' : 'join'}
@@ -216,6 +229,15 @@
                 disabled={!isConnected}
                 onclick={sendMessage}>Send</button>
         </div>
+        {#if isConnected}
+        <div class="flex font-mono text-xs">
+            <p class="font-bold mr-2">Active users: </p>
+            <p>
+            {#each activeUsers as user, i}
+                {` ${user.username}${i === activeUsers.length - 1 ? "" : ","}`}
+            {/each}
+            </p>
+        </div>
+        {/if}
     </div>
-
 </div> 
